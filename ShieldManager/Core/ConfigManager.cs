@@ -1,8 +1,9 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace IngameScript
 {
-    public class ConfigManager
+    internal class ConfigManager
     {
         private readonly Program program;
 

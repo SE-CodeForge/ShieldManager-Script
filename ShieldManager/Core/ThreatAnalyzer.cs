@@ -1,20 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Sandbox.ModAPI.Ingame;
 using VRage.Game;
 using VRageMath;
 
 namespace IngameScript
 {
-    public class ThreatAnalyzer
+    internal class ThreatAnalyzer
     {
         private readonly Program program;
         private readonly ConfigManager config;
         private ShieldController shieldController;
 
-        // Threat System
-        private Dictionary<string, int> cachedThreats = new Dictionary<string, int> 
-            { { "kinetic", 0 }, { "energy", 0 }, { "explosive", 0 } };
+        // Directional Threat System (Controller block only)
         private Dictionary<string, int> directionThreats = new Dictionary<string, int> 
             { { "front", 0 }, { "back", 0 }, { "left", 0 }, { "right", 0 }, { "top", 0 }, { "bottom", 0 } };
         
@@ -28,7 +27,6 @@ namespace IngameScript
             new Dictionary<MyDetectedEntityInfo, float>(16, new Program.DetectedEntityComparer());
         private int lastWcThreatTick = -999;
 
-        public Dictionary<string, int> CachedThreats => cachedThreats;
         public Dictionary<string, int> DirectionThreats => directionThreats;
         public bool WcApiActive => wcApiActive;
         public int RecentThreatCount => recentThreats.Count;
@@ -68,7 +66,7 @@ namespace IngameScript
                 return;
             }
 
-            var threats = AnalyzeThreats();
+            AnalyzeDirectionalThreats();
             var refreshed = (config.ticks == lastThreatRefresh);
 
             if (refreshed)
@@ -79,7 +77,7 @@ namespace IngameScript
             }
 
             var timeTrigger = config.ticks % ConfigManager.SHUNT_TIMEOUT == 0;
-            var threatTrigger = refreshed && GetTotalThreats() > 0;
+            var threatTrigger = refreshed && GetTotalDirectionalThreats() > 0;
 
             if (timeTrigger || threatTrigger)
             {
@@ -104,11 +102,6 @@ namespace IngameScript
             directionThreats["right"] = 0;
             directionThreats["top"] = 0;
             directionThreats["bottom"] = 0;
-
-            // Also reset weapon type counters for display
-            cachedThreats["kinetic"] = 0;
-            cachedThreats["energy"] = 0;
-            cachedThreats["explosive"] = 0;
 
             foreach (var kv in wcThreatBuffer)
             {
@@ -151,24 +144,14 @@ namespace IngameScript
                     else
                         directionThreats["front"]++;
                 }
-
-                // Still categorize by weapon type for display purposes
-                var lname = ent.Name.ToLower();
-                if (lname.Contains("missile") || lname.Contains("rocket") || lname.Contains("torpedo"))
-                    cachedThreats["explosive"]++;
-                else if (lname.Contains("laser") || lname.Contains("beam") || lname.Contains("plasma"))
-                    cachedThreats["energy"]++;
-                else
-                    cachedThreats["kinetic"]++;
             }
             lastThreatRefresh = config.ticks;
             lastWcThreatTick = config.ticks;
         }
 
-        public Dictionary<string, int> AnalyzeThreats()
+        public void AnalyzeDirectionalThreats()
         {
             if (wcApiActive) WeaponCoreThreatScan();
-            return cachedThreats;
         }
 
         public static string DetermineOptimalShunt(Dictionary<string, int> dirThreats)
@@ -252,11 +235,6 @@ namespace IngameScript
                 if (config.DEBUG) program.Echo("Directional shunt application failed: " + ex.Message);
                 return false;
             }
-        }
-
-        public int GetTotalThreats()
-        {
-            return cachedThreats["kinetic"] + cachedThreats["energy"] + cachedThreats["explosive"];
         }
 
         public int GetTotalDirectionalThreats()

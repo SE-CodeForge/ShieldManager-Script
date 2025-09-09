@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Sandbox.ModAPI.Ingame;
 using VRage.Game.GUI.TextPanel;
 using Sandbox.ModAPI.Interfaces;
 
 namespace IngameScript
 {
-    public class DisplayManager
+    internal class DisplayManager
     {
         private readonly Program program;
         private readonly ConfigManager config;
@@ -90,15 +91,9 @@ namespace IngameScript
             display.AppendLine("");
             display.AppendLine("Run 'clear' to return to normal display");
             
-            // Write to PB surface and any LCD panels
+            // Set the persistent output instead of writing directly
             var output = display.ToString();
-            pbSurface.WriteText(output);
-            
-            foreach (var panel in shieldController.LcdPanels)
-            {
-                panel.ContentType = ContentType.TEXT_AND_IMAGE;
-                panel.WriteText(output);
-            }
+            ShowPersistentOutput(output);
         }
 
         public void UpdateDisplays()
@@ -151,7 +146,29 @@ namespace IngameScript
             if (shieldController.ApiCachedPercent >= 0)
                 display.AppendLine("Level: " + (shieldController.ApiCachedPercent * 100).ToString("F1") + "% (" + shieldController.LastShieldSource + ")");
             else
+            {
                 display.AppendLine("Level: NO DATA");
+                // Add debug information to see what's wrong
+                if (shieldController.DSControl == null)
+                    display.AppendLine("DEBUG: No Defense Shields Controller found");
+                else
+                {
+                    display.AppendLine("DEBUG: DS Controller found: " + shieldController.DSControl.CustomName);
+                    display.AppendLine("DEBUG: API Percent: " + shieldController.ApiCachedPercent);
+                    display.AppendLine("DEBUG: Last Source: " + shieldController.LastShieldSource);
+                    
+                    // Check if the controller block has a shield percentage in its name
+                    var name = shieldController.DSControl.CustomName;
+                    if (name.Contains("(") && name.Contains("/") && name.Contains(")"))
+                    {
+                        display.AppendLine("DEBUG: Shield data found in block name");
+                    }
+                    else
+                    {
+                        display.AppendLine("DEBUG: No shield data in block name - shields may be offline");
+                    }
+                }
+            }
             display.AppendLine();
 
             display.AppendLine("SHUNT SYSTEM");
@@ -163,14 +180,17 @@ namespace IngameScript
                 display.AppendLine("Forced: " + shieldController.ForcedShuntMode.ToUpper());
             display.AppendLine();
 
-            display.AppendLine("THREAT ANALYSIS");
-            var threats = threatAnalyzer.AnalyzeThreats();
-            var total = threatAnalyzer.GetTotalThreats();
+            display.AppendLine("DIRECTIONAL THREAT ANALYSIS");
+            
+            // Make sure we analyze threats first for display purposes
+            threatAnalyzer.AnalyzeDirectionalThreats();
+            var total = threatAnalyzer.GetTotalDirectionalThreats();
+            
             if (total == 0)
                 display.AppendLine("No threats detected");
             else
             {
-                display.AppendLine("=== BY DIRECTION ===");
+                display.AppendLine("=== THREAT DIRECTIONS ===");
                 display.AppendLine("Front: " + threatAnalyzer.DirectionThreats["front"]);
                 display.AppendLine("Back: " + threatAnalyzer.DirectionThreats["back"]);
                 display.AppendLine("Left: " + threatAnalyzer.DirectionThreats["left"]);
@@ -178,11 +198,7 @@ namespace IngameScript
                 display.AppendLine("Top: " + threatAnalyzer.DirectionThreats["top"]);
                 display.AppendLine("Bottom: " + threatAnalyzer.DirectionThreats["bottom"]);
                 display.AppendLine("Primary: " + ThreatAnalyzer.DetermineOptimalShunt(threatAnalyzer.DirectionThreats).ToUpper());
-                display.AppendLine("");
-                display.AppendLine("=== BY WEAPON TYPE ===");
-                display.AppendLine("Kinetic: " + threats["kinetic"]);
-                display.AppendLine("Energy: " + threats["energy"]);
-                display.AppendLine("Explosive: " + threats["explosive"]);
+                display.AppendLine("Total: " + total);
             }
             display.AppendLine();
 

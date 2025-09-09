@@ -7,7 +7,7 @@ using Sandbox.ModAPI.Interfaces;
 
 namespace IngameScript
 {
-    public class ShieldController
+    internal class ShieldController
     {
         private readonly Program program;
         private readonly ConfigManager config;
@@ -31,6 +31,8 @@ namespace IngameScript
         private string lastAppliedShunt = "";
         private bool forceShunt;
         private string forcedShuntMode = "";
+
+        private static readonly string[] Faces = { "Top", "Bottom", "Left", "Right", "Front", "Back" };
 
         public bool IsInitialized => dsControl != null;
         public bool CyclingShunts => cyclingShunts;
@@ -86,33 +88,89 @@ namespace IngameScript
                 try
                 {
                     var p = dsWrapper.GetShieldPercent();
-                    if (p > 1f && p <= 100f) p /= 100f;
-                    if (p >= 0f && p <= 1.2f)
+                    var isUp = dsWrapper.IsShieldUp();
+                    var status = dsWrapper.ShieldStatus();
+                    var charge = dsWrapper.GetCharge();
+                    var maxCharge = dsWrapper.GetMaxCharge();
+                    
+                    if (config.DEBUG)
+                    {
+                        program.Echo($"API Raw Values - Percent: {p}, IsUp: {isUp}, Status: '{status}'");
+                        program.Echo($"API Raw Values - Charge: {charge}, MaxCharge: {maxCharge}");
+                    }
+                    
+                    // Try different approaches to get shield percentage
+                    if (p >= 0f && p <= 1f)
                     {
                         apiCachedPercent = p;
-                        lastShieldSource = "api";
+                        lastShieldSource = "api-decimal";
+                        return;
+                    }
+                    else if (p > 1f && p <= 100f)
+                    {
+                        apiCachedPercent = p / 100f;
+                        lastShieldSource = "api-percent";
+                        return;
+                    }
+                    
+                    // Try to calculate from charge values
+                    if (charge >= 0 && maxCharge > 0)
+                    {
+                        apiCachedPercent = charge / maxCharge;
+                        lastShieldSource = "api-charge";
+                        if (config.DEBUG) program.Echo($"Calculated from charge: {charge}/{maxCharge} = {apiCachedPercent:F2}");
+                        return;
+                    }
+                    
+                    // Check if shield is just starting up
+                    if (isUp && status != null && status.Length > 0)
+                    {
+                        apiCachedPercent = 0.5f; // Default to 50% if we know shields are up but can't get exact value
+                        lastShieldSource = "api-status";
                         return;
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    if (config.DEBUG) program.Echo("API Exception: " + ex.Message);
+                }
+            }
+            else if (config.DEBUG)
+            {
+                program.Echo("dsWrapper is null - attempting to reinitialize");
+                InitDefenseShieldsWrapper();
             }
 
+            // Enhanced name parsing as fallback - Fixed for C# 6.0
             var name = dsControl?.CustomName;
             if (!string.IsNullOrEmpty(name))
             {
+                if (config.DEBUG) program.Echo($"Checking block name: '{name}'");
+                
                 var s = name.IndexOf('(');
                 var slash = name.IndexOf('/');
                 var e = name.IndexOf(')');
                 if (s >= 0 && slash > s && e > slash)
                 {
-                    ulong cur, max;
-                    if (ulong.TryParse(name.Substring(s + 1, slash - s - 1), out cur) &&
-                        ulong.TryParse(name.Substring(slash + 1, e - slash - 1), out max) && max > 0)
+                    var curStr = name.Substring(s + 1, slash - s - 1);
+                    var maxStr = name.Substring(slash + 1, e - slash - 1);
+                    
+                    if (config.DEBUG) program.Echo($"Found shield data in name: '{curStr}' / '{maxStr}'");
+
+                    float cur, max;
+                    if (float.TryParse(curStr, out cur) && float.TryParse(maxStr, out max) && max > 0)
                     {
-                        apiCachedPercent = (float)cur / max;
+                        apiCachedPercent = cur / max;
                         lastShieldSource = "name";
+                        if (config.DEBUG) program.Echo($"Name parsing successful: {cur}/{max} = {apiCachedPercent:F2}");
+                        return;
                     }
                 }
+            }
+            
+            if (config.DEBUG && dsControl != null)
+            {
+                program.Echo($"All shield data methods failed for block: {dsControl.CustomName}");
             }
         }
 
@@ -122,11 +180,9 @@ namespace IngameScript
             cycleTimer = 0;
             currentCycleIndex = 0;
             config.ADAPTIVE_SHUNT = false;
-            
             SetAutoManagement(false);
             EnableShuntShields(true);
-            
-            ApplyShuntMode(config.cycleOrder[currentCycleIndex]);
+            ApplyShunt(config.cycleOrder[currentCycleIndex]);
         }
 
         public void StopShuntCycling()
@@ -138,14 +194,12 @@ namespace IngameScript
         public void UpdateShuntCycling()
         {
             if (!cyclingShunts) return;
-            
             cycleTimer++;
-            
             if (cycleTimer >= ConfigManager.CYCLE_INTERVAL)
             {
                 currentCycleIndex = (currentCycleIndex + 1) % config.cycleOrder.Length;
                 cycleTimer = 0;
-                ApplyShuntMode(config.cycleOrder[currentCycleIndex]);
+                ApplyShunt(config.cycleOrder[currentCycleIndex]);
             }
         }
 
@@ -164,82 +218,36 @@ namespace IngameScript
         public void ApplyShunt(string mode)
         {
             if (string.IsNullOrEmpty(mode)) return;
-            
+
             if (forceShunt || mode != lastAppliedShunt)
             {
                 if (dsControl != null && ApplyShuntViaActions(mode))
                 {
                     lastAppliedShunt = mode;
+                    forceShunt = false; // Reset force flag
                     if (config.DEBUG) program.Echo("Shunt applied via actions: " + mode.ToUpper());
                 }
                 else
                 {
                     lastAppliedShunt = mode;
-                    if (config.DEBUG) program.Echo("Shunt applied via CustomData: " + mode.ToUpper());
+                    forceShunt = false; // Also reset on failure
+                    if (config.DEBUG) program.Echo("Shunt failed or applied via CustomData: " + mode.ToUpper());
                 }
                 
                 config.SetShuntRecommendation(mode);
             }
         }
 
-        private void ApplyShuntMode(string mode)
-        {
-            SetAutoManagement(false);
-            EnableShuntShields(true);
-            
-            string[] faces = { "Top", "Bottom", "Left", "Right", "Front", "Back" };
-            
-            foreach (var face in faces)
-            {
-                var actionName = GetShuntActionName(face, mode);
-                if (!string.IsNullOrEmpty(actionName))
-                {
-                    var action = dsControl.GetActionWithName(actionName);
-                    if (action != null)
-                    {
-                        action.Apply(dsControl);
-                        if (config.DEBUG) program.Echo($"Cycle: Applied {face}: {actionName}");
-                    }
-                }
-            }
-            
-            config.SetShuntRecommendation(mode);
-        }
-
         private bool ApplyShuntViaActions(string mode)
         {
+            if (dsControl == null) return false;
             try
             {
-                if (!SetAutoManagement(false))
-                {
-                    if (config.DEBUG) program.Echo("Failed to disable AutoManage");
-                    return false;
-                }
-                
-                if (!EnableShuntShields(true))
-                {
-                    if (config.DEBUG) program.Echo("Failed to enable shunt shields");
-                    return false;
-                }
-                
-                string[] faces = { "Top", "Bottom", "Left", "Right", "Front", "Back" };
-                foreach (var face in faces)
-                {
-                    var faceProp = dsControl.GetProperty($"DS-C_{face}Shield");
-                    if (faceProp != null)
-                    {
-                        var boolProp = faceProp as ITerminalProperty<bool>;
-                        if (boolProp != null && !boolProp.GetValue(dsControl))
-                        {
-                            boolProp.SetValue(dsControl, true);
-                            if (config.DEBUG) program.Echo($"Force enabled DS-C_{face}Shield");
-                        }
-                    }
-                }
-                
+                SetAutoManagement(false);
+                EnableShuntShields(true);
+
                 var anyApplied = false;
-                
-                foreach (var face in faces)
+                foreach (var face in Faces)
                 {
                     var actionName = GetShuntActionName(face, mode);
                     if (!string.IsNullOrEmpty(actionName))
@@ -249,7 +257,6 @@ namespace IngameScript
                         {
                             action.Apply(dsControl);
                             anyApplied = true;
-                            if (config.DEBUG) program.Echo($"Applied: {actionName}");
                         }
                         else if (config.DEBUG)
                         {
@@ -257,7 +264,6 @@ namespace IngameScript
                         }
                     }
                 }
-                
                 return anyApplied;
             }
             catch (Exception ex)
@@ -272,26 +278,13 @@ namespace IngameScript
             switch (mode.ToLower())
             {
                 case "kinetic":
-                    if (face == "Front" || face == "Back")
-                        return $"DS-C_{face}Shield_ShuntOn";
-                    else
-                        return $"DS-C_{face}Shield_ShuntOff";
-                        
+                    return (face == "Front" || face == "Back") ? $"DS-C_{face}Shield_ShuntOn" : $"DS-C_{face}Shield_ShuntOff";
                 case "energy":
-                    if (face == "Top" || face == "Bottom")
-                        return $"DS-C_{face}Shield_ShuntOn";
-                    else
-                        return $"DS-C_{face}Shield_ShuntOff";
-                        
+                    return (face == "Top" || face == "Bottom") ? $"DS-C_{face}Shield_ShuntOn" : $"DS-C_{face}Shield_ShuntOff";
                 case "explosive":
-                    if (face == "Front" || face == "Left" || face == "Right")
-                        return $"DS-C_{face}Shield_ShuntOn";
-                    else
-                        return $"DS-C_{face}Shield_ShuntOff";
-                        
+                    return (face == "Front" || face == "Left" || face == "Right") ? $"DS-C_{face}Shield_ShuntOn" : $"DS-C_{face}Shield_ShuntOff";
                 case "balanced":
                     return $"DS-C_{face}Shield_ShuntOff";
-                    
                 case "front":
                     return face == "Front" ? $"DS-C_{face}Shield_ShuntOn" : $"DS-C_{face}Shield_ShuntOff";
                 case "back":
@@ -304,7 +297,6 @@ namespace IngameScript
                     return face == "Top" ? $"DS-C_{face}Shield_ShuntOn" : $"DS-C_{face}Shield_ShuntOff";
                 case "bottom":
                     return face == "Bottom" ? $"DS-C_{face}Shield_ShuntOn" : $"DS-C_{face}Shield_ShuntOff";
-                    
                 default:
                     return $"DS-C_{face}Shield_ShuntOff";
             }
@@ -312,42 +304,35 @@ namespace IngameScript
 
         private bool EnableShuntShields(bool enabled)
         {
+            if (dsControl == null) return false;
             try
             {
-                var success = false;
-                string[] faces = { "Top", "Bottom", "Left", "Right", "Front", "Back" };
-                foreach (var face in faces)
+                // Enable individual faces
+                foreach (var face in Faces)
                 {
-                    var faceProp = dsControl.GetProperty($"DS-C_{face}Shield");
-                    if (faceProp != null)
+                    var faceProp = dsControl.GetProperty($"DS-C_{face}Shield") as ITerminalProperty<bool>;
+                    if (faceProp != null && !faceProp.GetValue(dsControl))
                     {
-                        var boolProp = faceProp as ITerminalProperty<bool>;
-                        if (boolProp != null)
-                        {
-                            boolProp.SetValue(dsControl, true);
-                            if (config.DEBUG) program.Echo($"Set DS-C_{face}Shield to true");
-                            success = true;
-                        }
+                        faceProp.SetValue(dsControl, true);
                     }
                 }
 
-                var redirectProp = dsControl.GetProperty("DS-C_SideRedirect");
-                if (redirectProp != null)
+                // Enable the main shunt toggle
+                var redirectProp = dsControl.GetProperty("DS-C_SideRedirect") as ITerminalProperty<bool>;
+                if (redirectProp != null && !redirectProp.GetValue(dsControl))
                 {
-                    var boolProp = redirectProp as ITerminalProperty<bool>;
-                    if (boolProp != null)
+                    // Prefer property setting, but fallback to action if it fails
+                    redirectProp.SetValue(dsControl, true);
+                    if (!redirectProp.GetValue(dsControl))
                     {
-                        boolProp.SetValue(dsControl, true);
-                        if (config.DEBUG) program.Echo($"Set DS-C_SideRedirect to true");
-                        success = true;
+                        dsControl.GetActionWithName("DS-C_SideRedirect_Toggle")?.Apply(dsControl);
                     }
                 }
-
-                return success;
+                return true;
             }
             catch (Exception ex)
             {
-                if (config.DEBUG) program.Echo("Enable Shunt Shields failed: " + ex.Message);
+                if (config.DEBUG) program.Echo("EnableShuntShields failed: " + ex.Message);
                 return false;
             }
         }

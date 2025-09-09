@@ -2,7 +2,7 @@ using System.Text;
 
 namespace IngameScript
 {
-    public class TestSuite
+    internal class TestSuite
     {
         private readonly Program program;
         private readonly ShieldController shieldController;
