@@ -1,0 +1,5 @@
+is_global = true
+build_property.ProjectDir = C:\Users\jonat\Documents\GitHub\ShieldManager\ShieldManager\
+build_property.ProjectDir = C:\Users\jonat\Documents\GitHub\ShieldManager\ShieldManager\
+build_property.Mdk-IgnorePaths = obj\**\*;MDK\**\*;**\*.debug.cs
+build_property.RootNamespace = IngameScript
