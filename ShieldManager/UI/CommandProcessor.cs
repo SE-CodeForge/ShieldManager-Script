@@ -159,7 +159,6 @@ namespace IngameScript
                 output.AppendLine($"Distance: {Vector3D.Distance(pbPos, dsPos):F1}m");
                 output.AppendLine();
                 
-                // Show relative orientations
                 var relativeForward = Vector3D.Transform(pbMatrix.Forward, MatrixD.Transpose(dsMatrix));
                 var relativeUp = Vector3D.Transform(pbMatrix.Up, MatrixD.Transpose(dsMatrix));
                 var relativeRight = Vector3D.Transform(pbMatrix.Right, MatrixD.Transpose(dsMatrix));

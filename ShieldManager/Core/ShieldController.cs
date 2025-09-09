@@ -186,17 +186,14 @@ namespace IngameScript
         {
             if (DSControl == null || string.IsNullOrEmpty(shuntMode)) return;
 
-            // DEBUG: Always show what we're trying to do
             program.Echo($"=== APPLYING SHUNT: {shuntMode.ToUpper()} ===");
 
-            // DEBUG: Check Side Redirect status first
             try
             {
                 var redirectProp = DSControl.GetProperty("DS-C_SideRedirect") as ITerminalProperty<bool>;
-                bool sideRedirectEnabled = redirectProp?.GetValue(DSControl) ?? false;
+                var sideRedirectEnabled = redirectProp?.GetValue(DSControl) ?? false;
                 program.Echo($"Side Redirect enabled: {sideRedirectEnabled}");
                 
-                // Force enable if not enabled
                 if (!sideRedirectEnabled)
                 {
                     program.Echo("Enabling Side Redirect...");
@@ -217,10 +214,10 @@ namespace IngameScript
             var targetFaces = ShuntModeMappings[shuntMode];
             program.Echo($"Target faces: {string.Join(", ", targetFaces)}");
 
-            foreach (string face in Faces)
+            foreach (var face in Faces)
             {
-                bool shouldBeOn = targetFaces.Contains(face);
-                string actionName = GetShuntActionName(face, shouldBeOn);
+                var shouldBeOn = targetFaces.Contains(face);
+                var actionName = GetShuntActionName(face, shouldBeOn);
                 
                 program.Echo($"Face {face}: {(shouldBeOn ? "ON" : "OFF")} -> Action: {actionName}");
 
@@ -248,7 +245,6 @@ namespace IngameScript
 
         private string GetShuntActionName(string face, bool shouldBeOn)
         {
-            // FIX: Defense Shields logic is reversed!
             // "ShuntOn" = removes power from that face (face OFF)
             // "ShuntOff" = adds power to that face (face ON)
             return shouldBeOn ? $"DS-C_{face}Shield_ShuntOff" : $"DS-C_{face}Shield_ShuntOn";
@@ -264,7 +260,6 @@ namespace IngameScript
 
                 var anyApplied = false;
                 
-                // Fix: Get the target faces for this mode first
                 if (!ShuntModeMappings.ContainsKey(mode))
                 {
                     if (config.DEBUG) program.Echo($"Unknown shunt mode: {mode}");
@@ -275,8 +270,8 @@ namespace IngameScript
                 
                 foreach (var face in Faces)
                 {
-                    bool shouldBeOn = targetFaces.Contains(face);
-                    var actionName = GetShuntActionName(face, shouldBeOn); // Now uses bool correctly
+                    var shouldBeOn = targetFaces.Contains(face);
+                    var actionName = GetShuntActionName(face, shouldBeOn);
                     
                     if (!string.IsNullOrEmpty(actionName))
                     {

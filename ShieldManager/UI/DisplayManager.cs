@@ -88,14 +88,12 @@ namespace IngameScript
             display.AppendLine("");
             display.AppendLine("Run 'clear' to return to normal display");
             
-            // Set the persistent output instead of writing directly
             var output = display.ToString();
             ShowPersistentOutput(output);
         }
 
         public void UpdateDisplays()
         {
-            // Handle persistent output timer
             if (showingTestOutput && persistentOutputTimer > 0)
             {
                 persistentOutputTimer--;
@@ -106,13 +104,12 @@ namespace IngameScript
                 }
             }
             
-            // Show persistent outputs if active
             if (showingActionList || showingTestOutput)
             {
                 string output;
                 if (showingActionList)
                 {
-                    return; // Let ListAllShieldActions handle the display
+                    return;
                 }
 
                 if (showingTestOutput)
@@ -134,7 +131,6 @@ namespace IngameScript
                 return;
             }
             
-            // Normal display update
             display.Clear();
             display.AppendLine("TEKKONIC SHIELD MANAGER v2.0");
             display.AppendLine("Closest Threat Auto-Shunt Mode");
@@ -199,7 +195,6 @@ namespace IngameScript
                 display.AppendLine($"Force Shunt: {shieldController2.ForceShunt}");
                 display.AppendLine($"Ticks: {config.ticks}");
                 
-                // Add orientation debug info
                 if (shieldController2.DSControl != null)
                 {
                     var pbMatrix = program.Me.WorldMatrix;
