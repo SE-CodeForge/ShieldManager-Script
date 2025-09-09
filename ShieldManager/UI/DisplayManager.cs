@@ -1,9 +1,9 @@
-using System;
 using System.Collections.Generic;
 using System.Text;
 using Sandbox.ModAPI.Ingame;
-using VRage.Game.GUI.TextPanel;
 using Sandbox.ModAPI.Interfaces;
+using VRage.Game.GUI.TextPanel;
+using VRageMath;
 
 namespace IngameScript
 {
@@ -11,33 +11,30 @@ namespace IngameScript
     {
         private readonly Program program;
         private readonly ConfigManager config;
-        private ShieldController shieldController;
-        private ThreatAnalyzer threatAnalyzer;
+        private ShieldController shieldController2;
+        private ThreatAnalyzer threatAnalyzer2;
 
         // UI
         private StringBuilder display = new StringBuilder();
         private IMyTextSurface pbSurface;
         
         // Persistent Output System
-        private bool showingActionList = false;
-        private bool showingTestOutput = false;
+        private bool showingActionList;
+        private bool showingTestOutput;
         private string persistentOutput = "";
-        private int persistentOutputTimer = 0;
+        private int persistentOutputTimer;
 
-        public DisplayManager(Program program, ConfigManager config)
+        public DisplayManager(Program program, ConfigManager config, ShieldController shieldController, ThreatAnalyzer threatAnalyzer)
         {
             this.program = program;
             this.config = config;
+            this.shieldController2 = shieldController;
+            this.threatAnalyzer2 = threatAnalyzer;
+            
             pbSurface = program.Me.GetSurface(0);
             pbSurface.ContentType = ContentType.TEXT_AND_IMAGE;
             pbSurface.FontSize = 0.7f;
             pbSurface.Font = "Monospace";
-        }
-
-        public void SetControllers(ShieldController shieldController, ThreatAnalyzer threatAnalyzer)
-        {
-            this.shieldController = shieldController;
-            this.threatAnalyzer = threatAnalyzer;
         }
 
         public void ShowPersistentOutput(string output)
@@ -58,7 +55,7 @@ namespace IngameScript
 
         public void ListAllShieldActions()
         {
-            if (shieldController.DSControl == null)
+            if (shieldController2.DSControl == null)
             {
                 display.Clear();
                 display.AppendLine("No Defense Shields controller found");
@@ -70,7 +67,7 @@ namespace IngameScript
             display.AppendLine("=== DEFENSE SHIELDS ACTIONS ===");
             
             var actions = new List<ITerminalAction>();
-            shieldController.DSControl.GetActions(actions);
+            shieldController2.DSControl.GetActions(actions);
             
             foreach (var action in actions)
             {
@@ -81,7 +78,7 @@ namespace IngameScript
             display.AppendLine("=== DEFENSE SHIELDS PROPERTIES ===");
             
             var properties = new List<ITerminalProperty>();
-            shieldController.DSControl.GetProperties(properties);
+            shieldController2.DSControl.GetProperties(properties);
             
             foreach (var prop in properties)
             {
@@ -102,7 +99,7 @@ namespace IngameScript
             if (showingTestOutput && persistentOutputTimer > 0)
             {
                 persistentOutputTimer--;
-                if (persistentOutputTimer <= 0 && !shieldController.CyclingShunts) // Keep cycling display active
+                if (persistentOutputTimer <= 0)
                 {
                     showingTestOutput = false;
                     persistentOutput = "";
@@ -117,7 +114,8 @@ namespace IngameScript
                 {
                     return; // Let ListAllShieldActions handle the display
                 }
-                else if (showingTestOutput)
+
+                if (showingTestOutput)
                 {
                     output = persistentOutput + "\n\nRun 'clear' to return to normal display";
                 }
@@ -125,10 +123,10 @@ namespace IngameScript
                 {
                     return;
                 }
-                
+
                 pbSurface.WriteText(output);
                 
-                foreach (var panel in shieldController.LcdPanels)
+                foreach (var panel in shieldController2.LcdPanels)
                 {
                     panel.ContentType = ContentType.TEXT_AND_IMAGE;
                     panel.WriteText(output);
@@ -139,26 +137,24 @@ namespace IngameScript
             // Normal display update
             display.Clear();
             display.AppendLine("TEKKONIC SHIELD MANAGER v2.0");
-            display.AppendLine("Directional Auto-Shunt Mode");
+            display.AppendLine("Closest Threat Auto-Shunt Mode");
             display.AppendLine();
             
             display.AppendLine("SHIELD STATUS");
-            if (shieldController.ApiCachedPercent >= 0)
-                display.AppendLine("Level: " + (shieldController.ApiCachedPercent * 100).ToString("F1") + "% (" + shieldController.LastShieldSource + ")");
+            if (shieldController2.ApiCachedPercent >= 0)
+                display.AppendLine("Level: " + (shieldController2.ApiCachedPercent * 100).ToString("F1") + "% (" + shieldController2.LastShieldSource + ")");
             else
             {
                 display.AppendLine("Level: NO DATA");
-                // Add debug information to see what's wrong
-                if (shieldController.DSControl == null)
+                if (shieldController2.DSControl == null)
                     display.AppendLine("DEBUG: No Defense Shields Controller found");
                 else
                 {
-                    display.AppendLine("DEBUG: DS Controller found: " + shieldController.DSControl.CustomName);
-                    display.AppendLine("DEBUG: API Percent: " + shieldController.ApiCachedPercent);
-                    display.AppendLine("DEBUG: Last Source: " + shieldController.LastShieldSource);
+                    display.AppendLine("DEBUG: DS Controller found: " + shieldController2.DSControl.CustomName);
+                    display.AppendLine("DEBUG: API Percent: " + shieldController2.ApiCachedPercent);
+                    display.AppendLine("DEBUG: Last Source: " + shieldController2.LastShieldSource);
                     
-                    // Check if the controller block has a shield percentage in its name
-                    var name = shieldController.DSControl.CustomName;
+                    var name = shieldController2.DSControl.CustomName;
                     if (name.Contains("(") && name.Contains("/") && name.Contains(")"))
                     {
                         display.AppendLine("DEBUG: Shield data found in block name");
@@ -174,39 +170,50 @@ namespace IngameScript
             display.AppendLine("SHUNT SYSTEM");
             display.AppendLine("Current: " + config.GetCurrentShunt().ToUpper());
             display.AppendLine("Auto: " + (config.ADAPTIVE_SHUNT ? "ENABLED" : "DISABLED"));
-            if (shieldController.CyclingShunts)
-                display.AppendLine("CYCLING: " + shieldController.GetCyclingInfo());
-            else if (shieldController.ForceShunt)
-                display.AppendLine("Forced: " + shieldController.ForcedShuntMode.ToUpper());
+            if (shieldController2.ForceShunt)
+                display.AppendLine("Forced: " + shieldController2.ForcedShuntMode.ToUpper());
             display.AppendLine();
 
-            display.AppendLine("DIRECTIONAL THREAT ANALYSIS");
-            
-            // Make sure we analyze threats first for display purposes
-            threatAnalyzer.AnalyzeDirectionalThreats();
-            var total = threatAnalyzer.GetTotalDirectionalThreats();
-            
-            if (total == 0)
-                display.AppendLine("No threats detected");
+            display.AppendLine($"Shield HP: {shieldController2.ApiCachedPercent:P0} ({shieldController2.LastShieldSource})");
+            display.AppendLine($"Shunt Mode: {shieldController2.LastAppliedShunt.ToUpper()}");
+
+            var target = threatAnalyzer2.CurrentTarget;
+            if (target.HasValue && target.Value.EntityId != 0)
+            {
+                display.AppendLine($"AI Target: {target.Value.Name}");
+            }
             else
             {
-                display.AppendLine("=== THREAT DIRECTIONS ===");
-                display.AppendLine("Front: " + threatAnalyzer.DirectionThreats["front"]);
-                display.AppendLine("Back: " + threatAnalyzer.DirectionThreats["back"]);
-                display.AppendLine("Left: " + threatAnalyzer.DirectionThreats["left"]);
-                display.AppendLine("Right: " + threatAnalyzer.DirectionThreats["right"]);
-                display.AppendLine("Top: " + threatAnalyzer.DirectionThreats["top"]);
-                display.AppendLine("Bottom: " + threatAnalyzer.DirectionThreats["bottom"]);
-                display.AppendLine("Primary: " + ThreatAnalyzer.DetermineOptimalShunt(threatAnalyzer.DirectionThreats).ToUpper());
-                display.AppendLine("Total: " + total);
+                display.AppendLine("AI Target: None");
             }
-            display.AppendLine();
 
-            display.AppendLine("WEAPONCORE API: " + (threatAnalyzer.WcApiActive ? "ACTIVE" : "OFFLINE"));
-            display.AppendLine("Recent Samples: " + threatAnalyzer.RecentThreatCount);
+            if (threatAnalyzer2.IncomingLocks > 0)
+            {
+                display.AppendLine($"!!! INCOMING LOCKS: {threatAnalyzer2.IncomingLocks} !!!");
+            }
+
+            if (config.DEBUG)
+            {
+                display.AppendLine("--- DEBUG INFO ---");
+                display.AppendLine($"Shield Source: {shieldController2.LastShieldSource}");
+                display.AppendLine($"Force Shunt: {shieldController2.ForceShunt}");
+                display.AppendLine($"Ticks: {config.ticks}");
+                
+                // Add orientation debug info
+                if (shieldController2.DSControl != null)
+                {
+                    var pbMatrix = program.Me.WorldMatrix;
+                    var dsMatrix = shieldController2.DSControl.WorldMatrix;
+                    var relativeForward = Vector3D.Transform(pbMatrix.Forward, MatrixD.Transpose(dsMatrix));
+                    display.AppendLine($"PB->DS Orientation: {relativeForward.ToString("F2")}");
+                }
+            }
+
+            display.AppendLine();
+            display.AppendLine("WEAPONCORE API: " + (threatAnalyzer2.WcApiActive ? "ACTIVE" : "OFFLINE"));
             
             var outText = display.ToString();
-            foreach (var p in shieldController.LcdPanels)
+            foreach (var p in shieldController2.LcdPanels)
             {
                 p.ContentType = ContentType.TEXT_AND_IMAGE;
                 p.WriteText(outText);
@@ -214,7 +221,7 @@ namespace IngameScript
             }
 
             pbSurface.WriteText(outText);
-            program.Echo("Shunt: " + config.GetCurrentShunt().ToUpper() + " | Threats: " + total + " | WC: " + (threatAnalyzer.WcApiActive ? "OK" : "OFF"));
+            program.Echo("Shunt: " + config.GetCurrentShunt().ToUpper() + " | WC: " + (threatAnalyzer2.WcApiActive ? "OK" : "OFF"));
         }
     }
 }

@@ -16,3 +16,4 @@ C:\Users\jonat\Documents\GitHub\ShieldManager\ShieldManager\obj\x64\Debug\netfra
 C:\Users\jonat\Documents\GitHub\ShieldManager\ShieldManager\obj\x64\Debug\netframework48\ShieldMa.1866C58E.Up2Date
 C:\Users\jonat\Documents\GitHub\ShieldManager\ShieldManager\obj\x64\Debug\netframework48\ShieldManager.dll
 C:\Users\jonat\Documents\GitHub\ShieldManager\ShieldManager\obj\x64\Debug\netframework48\ShieldManager.pdb
+C:\Users\jonat\Documents\GitHub\ShieldManager\ShieldManager\obj\x64\Debug\netframework48\ShieldManager.sourcelink.json

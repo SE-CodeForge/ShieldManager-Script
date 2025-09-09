@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using VRageMath;
 
 namespace IngameScript
 {
@@ -25,7 +26,6 @@ namespace IngameScript
 
             switch (arg)
             {
-                // === DIRECTIONAL COMMANDS ===
                 case "front":
                 case "back":
                 case "left":
@@ -35,124 +35,64 @@ namespace IngameScript
                 case "balanced":
                     shieldController.ForceShuntMode(arg);
                     displayManager.ClearPersistentOutputs();
+                    program.Echo($"Manual shunt: {arg.ToUpper()}");
                     return;
 
-                case "clearforceshunt":
+                case "auto":
                     shieldController.ClearForceShunt();
-                    displayManager.ShowPersistentOutput("Force shunt cleared");
+                    displayManager.ShowPersistentOutput("Auto shunt mode enabled - system will respond to closest threats");
                     return;
 
-                // === SYSTEM CONTROL ===
-                case "reenauto":
-                    shieldController.ReEnableAuto();
-                    displayManager.ShowPersistentOutput("Automatic directional shunt management re-enabled");
-                    return;
-                    
                 case "clear":
                     displayManager.ClearPersistentOutputs();
                     return;
-                    
-                // === TESTING & DIAGNOSTICS ===
+                
                 case "shielddiag":
                     DiagnoseShieldConnection();
-                    return;
-                    
-                case "teststate":
-                    TestSystemState();
-                    return;
-                    
-                case "cycleshunt":
-                    StartDirectionalCycling();
-                    return;
-                    
-                case "stopcycle":
-                    StopShuntCycling();
                     return;
                     
                 case "listactions":
                     displayManager.ListAllShieldActions();
                     return;
-                    
-                case "debug":
-                    ToggleDebugMode();
+
+                case "test-orientation":
+                    TestOrientation();
                     return;
                     
-                case "testapi":
-                    TestShieldApi();
-                    return;
-                    
-                case "fixshunt":
-                    ForceRecalibrateShunt();
+                default:
+                    if (arg.StartsWith("test-direction "))
+                    {
+                        var direction = arg.Substring("test-direction ".Length).Trim();
+                        TestDirection(direction);
+                    }
+                    else
+                    {
+                        ShowHelp();
+                    }
                     return;
             }
         }
 
-        private void StartDirectionalCycling()
-        {
-            shieldController.StartShuntCycling();
-            
-            var output = new StringBuilder();
-            output.AppendLine("=== DIRECTIONAL SHUNT CYCLING STARTED ===");
-            output.AppendLine("Cycling through all shield directions...");
-            output.AppendLine("Cycle interval: 3 seconds");
-            output.AppendLine("");
-            output.AppendLine("Watch Defense Shields terminal for changes!");
-            output.AppendLine("Run 'stopcycle' to stop cycling");
-            
-            displayManager.ShowPersistentOutput(output.ToString());
-        }
-
-        private void StopShuntCycling()
-        {
-            shieldController.StopShuntCycling();
-            
-            var output = new StringBuilder();
-            output.AppendLine("=== SHUNT CYCLING STOPPED ===");
-            output.AppendLine("Final mode: " + shieldController.LastAppliedShunt.ToUpper());
-            output.AppendLine("");
-            output.AppendLine("Run 'reenauto' to re-enable automatic management");
-            output.AppendLine("Or use directional commands: front, back, left, right, top, bottom, balanced");
-            
-            displayManager.ShowPersistentOutput(output.ToString());
-        }
-
-        private void TestSystemState()
+        private void ShowHelp()
         {
             var output = new StringBuilder();
-            string current = GetRecommendedShunt();
-            if (string.IsNullOrEmpty(current)) current = "balanced";
-            bool autoMode = !shieldController.ForceShunt && !shieldController.CyclingShunts; // approximation
-
-            output.AppendLine("=== SYSTEM STATE DEBUG ===");
-            output.AppendLine($"Current Shunt: {current}");
-            output.AppendLine($"Last Applied: {(string.IsNullOrEmpty(shieldController.LastAppliedShunt) ? "(none)" : shieldController.LastAppliedShunt)}");
-            output.AppendLine($"Force Mode: {(shieldController.ForceShunt ? shieldController.ForcedShuntMode : "none")}");
-            output.AppendLine($"Cycling: {(shieldController.CyclingShunts ? "active" : "inactive")}");
-            output.AppendLine($"Auto Management (derived): {(autoMode ? "enabled" : "disabled")}");
+            output.AppendLine("=== SHIELD MANAGER COMMANDS ===");
             output.AppendLine("");
-            output.AppendLine("Directional Threat Analysis:");
-            output.AppendLine($"Total Directional Threats: {threatAnalyzer.GetTotalDirectionalThreats()}");
-            output.AppendLine($"Front: {threatAnalyzer.DirectionThreats["front"]}");
-            output.AppendLine($"Back: {threatAnalyzer.DirectionThreats["back"]}");
-            output.AppendLine($"Left: {threatAnalyzer.DirectionThreats["left"]}");
-            output.AppendLine($"Right: {threatAnalyzer.DirectionThreats["right"]}");
-            output.AppendLine($"Top: {threatAnalyzer.DirectionThreats["top"]}");
-            output.AppendLine($"Bottom: {threatAnalyzer.DirectionThreats["bottom"]}");
-            output.AppendLine($"WeaponCore API: {(threatAnalyzer.WcApiActive ? "active" : "inactive")}");
+            output.AppendLine("MANUAL SHUNT CONTROL:");
+            output.AppendLine("  front, back, left, right, top, bottom");
+            output.AppendLine("  balanced - equal power to all faces");
+            output.AppendLine("  auto - enable automatic threat response");
+            output.AppendLine("");
+            output.AppendLine("DIAGNOSTICS:");
+            output.AppendLine("  shielddiag - check shield connection");
+            output.AppendLine("  listactions - show available shield actions");
+            output.AppendLine("  test-orientation - check block alignment");
+            output.AppendLine("  test-direction [face] - test specific direction");
+            output.AppendLine("");
+            output.AppendLine("UTILITY:");
+            output.AppendLine("  clear - return to main display");
+            
             displayManager.ShowPersistentOutput(output.ToString());
-        }
-
-        private string GetRecommendedShunt()
-        {
-            var data = program.Me.CustomData;
-            if (string.IsNullOrEmpty(data)) return "balanced";
-            var lines = data.Split('\n');
-            for (int i = lines.Length - 1; i >= 0; i--)
-            {
-                if (lines[i].StartsWith("CurrentShunt="))
-                    return lines[i].Substring("CurrentShunt=".Length).Trim();
-            }
-            return "balanced";
         }
 
         private void DiagnoseShieldConnection()
@@ -175,158 +115,88 @@ namespace IngameScript
                 output.AppendLine("  Functional: " + (shieldController.DSControl.IsFunctional ? "YES" : "NO"));
                 
                 output.AppendLine("");
-                output.AppendLine("=== API STATUS ===");
+                output.AppendLine("=== CURRENT STATUS ===");
+                output.AppendLine($"  Shield Level: {shieldController.ApiCachedPercent:P1}");
+                output.AppendLine($"  Current Shunt: {shieldController.LastAppliedShunt?.ToUpper() ?? "NONE"}");
+                output.AppendLine($"  Auto Mode: {(!shieldController.ForceShunt ? "ENABLED" : "DISABLED")}");
+                output.AppendLine($"  WeaponCore API: {(threatAnalyzer.WcApiActive ? "ACTIVE" : "OFFLINE")}");
                 
-                // Test the API directly
-                try
+                if (threatAnalyzer.WcApiActive)
                 {
-                    var testWrapper = new PbApiWrapper(shieldController.DSControl);
-                    var percent = testWrapper.GetShieldPercent();
-                    var isUp = testWrapper.IsShieldUp();
-                    var status = testWrapper.ShieldStatus();
-                    var charge = testWrapper.GetCharge();
-                    var maxCharge = testWrapper.GetMaxCharge();
-                    
-                    output.AppendLine("  API Connection: SUCCESS");
-                    output.AppendLine($"  Shield Percent: {percent}");
-                    output.AppendLine($"  Shield Up: {isUp}");
-                    output.AppendLine($"  Status: '{status}'");
-                    output.AppendLine($"  Charge: {charge:F0} / {maxCharge:F0}");
-                    
-                    if (charge > 0 && maxCharge > 0)
+                    var target = threatAnalyzer.CurrentTarget;
+                    if (target.HasValue && target.Value.EntityId != 0)
                     {
-                        var calculatedPercent = (charge / maxCharge) * 100f;
-                        output.AppendLine($"  Calculated: {calculatedPercent:F1}%");
+                        output.AppendLine($"  Current Target: {target.Value.Name}");
+                    }
+                    if (threatAnalyzer.IncomingLocks > 0)
+                    {
+                        output.AppendLine($"  Missile Locks: {threatAnalyzer.IncomingLocks}");
                     }
                 }
-                catch
-                {
-                    output.AppendLine("  API Connection: FAILED");
-                    output.AppendLine("  Error: " + "Could not communicate with Defense Shields API");
-                }
-                
-                output.AppendLine("");
-                output.AppendLine("=== TROUBLESHOOTING ===");
-                output.AppendLine("• Place Shield Generators on your ship");
-                output.AppendLine("• Ensure sufficient power (50-200MW+)");
-                output.AppendLine("• Turn ON shields in DS Controller terminal");
-                output.AppendLine("• Enable shield faces in DS settings");
-                output.AppendLine("• Look for 'Shield Online' status");
             }
             
             displayManager.ShowPersistentOutput(output.ToString());
         }
 
-        private void ToggleDebugMode()
-        {
-            var customData = program.Me.CustomData;
-            bool debugEnabled = customData.Contains("DEBUG=true");
-            
-            if (debugEnabled)
-            {
-                customData = customData.Replace("DEBUG=true", "DEBUG=false");
-                displayManager.ShowPersistentOutput("Debug mode: DISABLED");
-            }
-            else
-            {
-                if (customData.Contains("DEBUG=false"))
-                    customData = customData.Replace("DEBUG=false", "DEBUG=true");
-                else
-                    customData += "\nDEBUG=true";
-                displayManager.ShowPersistentOutput("Debug mode: ENABLED");
-            }
-            
-            program.Me.CustomData = customData;
-        }
-
-        private void TestShieldApi()
+        private void TestOrientation()
         {
             var output = new StringBuilder();
-            output.AppendLine("=== SHIELD API LIVE TEST ===");
+            output.AppendLine("=== ORIENTATION TEST ===");
             
             if (shieldController.DSControl == null)
             {
-                output.AppendLine("✗ No Defense Shields Controller found");
+                output.AppendLine("ERROR: No Defense Shields controller found!");
             }
             else
             {
-                output.AppendLine($"Testing API on: {shieldController.DSControl.CustomName}");
-                output.AppendLine("");
+                var pbPos = program.Me.GetPosition();
+                var dsPos = shieldController.DSControl.GetPosition();
+                var pbMatrix = program.Me.WorldMatrix;
+                var dsMatrix = shieldController.DSControl.WorldMatrix;
                 
-                try
-                {
-                    var wrapper = new PbApiWrapper(shieldController.DSControl);
-                    
-                    // Test all API methods
-                    var percent = wrapper.GetShieldPercent();
-                    var isUp = wrapper.IsShieldUp();
-                    var status = wrapper.ShieldStatus();
-                    var charge = wrapper.GetCharge();
-                    var maxCharge = wrapper.GetMaxCharge();
-                    var maxHpCap = wrapper.GetMaxHpCap();
-                    var hpRegenPerSecond = wrapper.HpToChargeRatio();
-                    var shieldHeat = wrapper.GetShieldHeat();
-                    
-                    output.AppendLine("=== API RESULTS ===");
-                    output.AppendLine($"GetShieldPercent(): {percent}");
-                    output.AppendLine($"IsShieldUp(): {isUp}");
-                    output.AppendLine($"ShieldStatus(): '{status}'");
-                    output.AppendLine($"GetCharge(): {charge}");
-                    output.AppendLine($"GetMaxCharge(): {maxCharge}");
-                    output.AppendLine($"GetMaxHpCap(): {maxHpCap}");
-                    output.AppendLine($"GetHpRegenPerSecond(): {hpRegenPerSecond}");
-                    output.AppendLine($"GetShieldHeat(): {shieldHeat}");
-                    
-                    output.AppendLine("");
-                    output.AppendLine("=== CALCULATIONS ===");
-                    if (charge >= 0 && maxCharge > 0)
-                    {
-                        var calcPercent = (charge / maxCharge) * 100f;
-                        output.AppendLine($"Calculated %: {calcPercent:F1}%");
-                    }
-                    if (percent > 0)
-                    {
-                        if (percent <= 1f)
-                            output.AppendLine($"Percent as decimal: {(percent * 100):F1}%");
-                        else
-                            output.AppendLine($"Percent direct: {percent:F1}%");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    output.AppendLine("✗ API Test Failed");
-                    output.AppendLine($"Error: {ex.Message}");
-                }
+                output.AppendLine($"Programming Block: {program.Me.CustomName}");
+                output.AppendLine($"DS Controller: {shieldController.DSControl.CustomName}");
+                output.AppendLine($"Distance: {Vector3D.Distance(pbPos, dsPos):F1}m");
+                output.AppendLine();
                 
-                // Also test block name parsing
-                output.AppendLine("");
-                output.AppendLine("=== BLOCK NAME ANALYSIS ===");
-                var name = shieldController.DSControl.CustomName;
-                output.AppendLine($"Full Name: '{name}'");
+                // Show relative orientations
+                var relativeForward = Vector3D.Transform(pbMatrix.Forward, MatrixD.Transpose(dsMatrix));
+                var relativeUp = Vector3D.Transform(pbMatrix.Up, MatrixD.Transpose(dsMatrix));
+                var relativeRight = Vector3D.Transform(pbMatrix.Right, MatrixD.Transpose(dsMatrix));
                 
-                if (name.Contains("(") && name.Contains("/") && name.Contains(")"))
-                {
-                    var s = name.IndexOf('(');
-                    var slash = name.IndexOf('/');
-                    var e = name.IndexOf(')');
-                    var shieldPart = name.Substring(s, e - s + 1);
-                    output.AppendLine($"Shield Part: '{shieldPart}'");
-                }
-                else
-                {
-                    output.AppendLine("No shield data pattern found in name");
-                }
+                output.AppendLine("PB orientation relative to DS Controller:");
+                output.AppendLine($"Forward: {relativeForward.ToString("F2")}");
+                output.AppendLine($"Up: {relativeUp.ToString("F2")}");
+                output.AppendLine($"Right: {relativeRight.ToString("F2")}");
+                output.AppendLine();
+                output.AppendLine("Use 'test-direction front' to verify directions work correctly.");
             }
             
             displayManager.ShowPersistentOutput(output.ToString());
         }
-
-        private void ForceRecalibrateShunt()
+        
+        private void TestDirection(string direction)
         {
-            var last = shieldController.LastAppliedShunt;
-            if (string.IsNullOrEmpty(last)) last = "balanced";
-            shieldController.ApplyShunt(last); // re-apply with new clean logic
-            displayManager.ShowPersistentOutput("Shunt recalibrated: " + last.ToUpper());
+            var validDirections = new[] {"front", "back", "left", "right", "top", "bottom", "balanced"};
+            if (!validDirections.Contains(direction))
+            {
+                program.Echo($"Invalid direction: {direction}");
+                program.Echo("Valid directions: " + string.Join(", ", validDirections));
+                return;
+            }
+            
+            shieldController.ApplyShunt(direction);
+            program.Echo($"Applied {direction.ToUpper()} shunt - watch your shields!");
+            
+            var output = new StringBuilder();
+            output.AppendLine($"=== DIRECTION TEST: {direction.ToUpper()} ===");
+            output.AppendLine("Watch your shield display to see which face is reinforced.");
+            output.AppendLine("If it's the wrong face, there may be an orientation issue.");
+            output.AppendLine();
+            output.AppendLine("Run 'test-orientation' to check block alignments.");
+            output.AppendLine("Run 'auto' to return to automatic mode.");
+            
+            displayManager.ShowPersistentOutput(output.ToString());
         }
     }
 }

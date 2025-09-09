@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Sandbox.ModAPI.Ingame;
 using VRage.Game;
 using VRageMath;
@@ -11,36 +10,26 @@ namespace IngameScript
     {
         private readonly Program program;
         private readonly ConfigManager config;
-        private ShieldController shieldController;
+        private readonly ShieldController shieldController;
 
-        // Directional Threat System (Controller block only)
-        private Dictionary<string, int> directionThreats = new Dictionary<string, int> 
-            { { "front", 0 }, { "back", 0 }, { "left", 0 }, { "right", 0 }, { "top", 0 }, { "bottom", 0 } };
-        
-        private int lastThreatRefresh = -999;
-        private Queue<string> recentThreats = new Queue<string>();
-
-        // WeaponCore Integration
         private WcPbApi wcApi;
         private bool wcApiActive;
+
+        // Threat data buffers
         private Dictionary<MyDetectedEntityInfo, float> wcThreatBuffer =
             new Dictionary<MyDetectedEntityInfo, float>(16, new Program.DetectedEntityComparer());
         private int lastWcThreatTick = -999;
 
-        public Dictionary<string, int> DirectionThreats => directionThreats;
         public bool WcApiActive => wcApiActive;
-        public int RecentThreatCount => recentThreats.Count;
+        public MyDetectedEntityInfo? CurrentTarget { get; private set; }
+        public int IncomingLocks { get; private set; }
 
-        public ThreatAnalyzer(Program program, ConfigManager config)
+        public ThreatAnalyzer(Program program, ConfigManager config, ShieldController shieldController)
         {
             this.program = program;
             this.config = config;
+            this.shieldController = shieldController;
             InitWeaponCoreApi();
-        }
-
-        public void SetShieldController(ShieldController controller)
-        {
-            this.shieldController = controller;
         }
 
         private void InitWeaponCoreApi()
@@ -58,189 +47,80 @@ namespace IngameScript
             }
         }
 
-        public void ManageShuntSystems()
+        public void AnalyzeDirectionalThreats()
         {
-            if (shieldController.ForceShunt)
+            if (!wcApiActive) return;
+
+            // --- Get General Target and Lock-on Info ---
+            CurrentTarget = wcApi.GetAiFocus(program.Me.CubeGrid.EntityId);
+            var lockData = wcApi.GetProjectilesLockedOn(program.Me.CubeGrid.EntityId);
+            IncomingLocks = lockData.Item2; // Item2 is the number of projectiles locked on
+
+            // --- Adaptive Shunting based on CLOSEST threat ---
+            if (!config.ADAPTIVE_SHUNT) return;
+            
+            if (config.ticks < lastWcThreatTick + ConfigManager.THREAT_REFRESH_INTERVAL) return;
+            lastWcThreatTick = config.ticks;
+
+            wcThreatBuffer.Clear();
+            wcApi.GetSortedThreats(program.Me, wcThreatBuffer);
+
+            if (wcThreatBuffer.Count == 0)
             {
-                shieldController.ApplyShunt(shieldController.ForcedShuntMode);
+                shieldController.ApplyShunt("balanced");
                 return;
             }
 
-            AnalyzeDirectionalThreats();
-            var refreshed = (config.ticks == lastThreatRefresh);
+            // Find the closest threat
+            MyDetectedEntityInfo closestThreat = new MyDetectedEntityInfo();
+            double closestDistSq = double.MaxValue;
+            Vector3D myPos = program.Me.GetPosition();
 
-            if (refreshed)
+            foreach (var entry in wcThreatBuffer)
             {
-                var optimal = DetermineOptimalShunt(directionThreats);
-                if (recentThreats.Count >= ConfigManager.POLL_MEMORY) recentThreats.Dequeue();
-                recentThreats.Enqueue(optimal);
-            }
-
-            var timeTrigger = config.ticks % ConfigManager.SHUNT_TIMEOUT == 0;
-            var threatTrigger = refreshed && GetTotalDirectionalThreats() > 0;
-
-            if (timeTrigger || threatTrigger)
-            {
-                var mode = GetMostFrequentShunt();
-                ApplyDirectionalShunt(mode);
-            }
-        }
-
-        private void WeaponCoreThreatScan()
-        {
-            if (!wcApiActive) return;
-            if (config.ticks - lastWcThreatTick < ConfigManager.THREAT_REFRESH_INTERVAL) return;
-            
-            wcThreatBuffer.Clear();
-            try { wcApi.GetSortedThreats(program.Me, wcThreatBuffer); }
-            catch { return; }
-
-            // Reset direction counters
-            directionThreats["front"] = 0;
-            directionThreats["back"] = 0;
-            directionThreats["left"] = 0;
-            directionThreats["right"] = 0;
-            directionThreats["top"] = 0;
-            directionThreats["bottom"] = 0;
-
-            foreach (var kv in wcThreatBuffer)
-            {
-                var ent = kv.Key;
-                if (ent.IsEmpty()) continue;
-                if (ent.Relationship == MyRelationsBetweenPlayerAndBlock.Owner ||
-                    ent.Relationship == MyRelationsBetweenPlayerAndBlock.FactionShare)
-                    continue;
-
-                // Calculate direction from our position to threat
-                var myPos = program.Me.CubeGrid.GetPosition();
-                var threatPos = ent.Position;
-                var direction = Vector3D.Normalize(threatPos - myPos);
-                
-                // Transform direction to grid local coordinates
-                var gridMatrix = program.Me.CubeGrid.WorldMatrix;
-                var localDirection = Vector3D.Transform(direction, MatrixD.Transpose(gridMatrix));
-
-                // Determine which face the threat is closest to
-                var maxAxis = Math.Max(Math.Max(Math.Abs(localDirection.X), Math.Abs(localDirection.Y)), Math.Abs(localDirection.Z));
-                
-                if (Math.Abs(localDirection.X) == maxAxis)
+                var threatInfo = entry.Key;
+                double distSq = Vector3D.DistanceSquared(myPos, threatInfo.Position);
+                if (distSq < closestDistSq)
                 {
-                    if (localDirection.X > 0)
-                        directionThreats["right"]++;
-                    else
-                        directionThreats["left"]++;
-                }
-                else if (Math.Abs(localDirection.Y) == maxAxis)
-                {
-                    if (localDirection.Y > 0)
-                        directionThreats["top"]++;
-                    else
-                        directionThreats["bottom"]++;
-                }
-                else if (Math.Abs(localDirection.Z) == maxAxis)
-                {
-                    if (localDirection.Z > 0)
-                        directionThreats["back"]++;
-                    else
-                        directionThreats["front"]++;
+                    closestDistSq = distSq;
+                    closestThreat = threatInfo;
                 }
             }
-            lastThreatRefresh = config.ticks;
-            lastWcThreatTick = config.ticks;
-        }
 
-        public void AnalyzeDirectionalThreats()
-        {
-            if (wcApiActive) WeaponCoreThreatScan();
-        }
-
-        public static string DetermineOptimalShunt(Dictionary<string, int> dirThreats)
-        {
-            var maxThreat = 0;
-            var primaryDirection = "balanced";
-            
-            foreach (var kvp in dirThreats)
+            // Apply shunt based on the direction of the closest threat
+            if (closestThreat.EntityId != 0)
             {
-                if (kvp.Value > maxThreat)
-                {
-                    maxThreat = kvp.Value;
-                    primaryDirection = kvp.Key;
-                }
+                string direction = GetThreatDirection(closestThreat);
+                shieldController.ApplyShunt(direction);
             }
-            
-            return maxThreat > 0 ? primaryDirection : "balanced";
-        }
-
-        private string GetMostFrequentShunt()
-        {
-            // Count directional threats from recent queue
-            int front = 0, back = 0, left = 0, right = 0, top = 0, bottom = 0, balanced = 0;
-            
-            foreach (var t in recentThreats)
+            else
             {
-                switch (t)
-                {
-                    case "front": front++; break;
-                    case "back": back++; break;
-                    case "left": left++; break;
-                    case "right": right++; break;
-                    case "top": top++; break;
-                    case "bottom": bottom++; break;
-                    default: balanced++; break;
-                }
-            }
-            
-            var mode = "balanced";
-            var best = balanced;
-            
-            if (front > best) { best = front; mode = "front"; }
-            if (back > best) { best = back; mode = "back"; }
-            if (left > best) { best = left; mode = "left"; }
-            if (right > best) { best = right; mode = "right"; }
-            if (top > best) { best = top; mode = "top"; }
-            if (bottom > best) { best = bottom; mode = "bottom"; }
-            
-            return mode;
-        }
-
-        private void ApplyDirectionalShunt(string primaryDirection)
-        {
-            if (string.IsNullOrEmpty(primaryDirection)) return;
-            
-            if (primaryDirection != shieldController.LastAppliedShunt)
-            {
-                if (shieldController.DSControl != null && ApplyDirectionalShuntViaActions())
-                {
-                    if (config.DEBUG) program.Echo("Directional shunt applied: " + primaryDirection.ToUpper());
-                }
-                
-                config.SetShuntRecommendation(primaryDirection);
+                shieldController.ApplyShunt("balanced");
             }
         }
 
-        private bool ApplyDirectionalShuntViaActions()
+        private string GetThreatDirection(MyDetectedEntityInfo threat)
         {
-            try
-            {
-                // Get the primary threat direction
-                var primaryDirection = DetermineOptimalShunt(directionThreats);
-                
-                // Use the shield controller's methods to apply the shunt
-                shieldController.ApplyShunt(primaryDirection);
-                
-                return true;
-            }
-            catch (Exception ex)
-            {
-                if (config.DEBUG) program.Echo("Directional shunt application failed: " + ex.Message);
-                return false;
-            }
-        }
+            // Use the Defense Shields controller's coordinate system instead of the PB's
+            Vector3D threatPos = threat.Position;
+            Vector3D controllerPos = shieldController.DSControl.GetPosition();
+            
+            // Transform the threat position into the controller's local coordinate system
+            Vector3D worldOffset = threatPos - controllerPos;
+            Vector3D localThreatVector = Vector3D.Transform(worldOffset, 
+                MatrixD.Transpose(shieldController.DSControl.WorldMatrix));
 
-        public int GetTotalDirectionalThreats()
-        {
-            return directionThreats["front"] + directionThreats["back"] + directionThreats["left"] + 
-                   directionThreats["right"] + directionThreats["top"] + directionThreats["bottom"];
+            double absX = Math.Abs(localThreatVector.X);
+            double absY = Math.Abs(localThreatVector.Y);
+            double absZ = Math.Abs(localThreatVector.Z);
+
+            // Determine the dominant direction in the controller's coordinate system
+            if (absX >= absY && absX >= absZ)
+                return localThreatVector.X > 0 ? "right" : "left";
+            else if (absY >= absX && absY >= absZ)
+                return localThreatVector.Y > 0 ? "top" : "bottom";
+            else
+                return localThreatVector.Z > 0 ? "back" : "front";
         }
     }
 }

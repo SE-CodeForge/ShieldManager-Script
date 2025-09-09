@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 
 namespace IngameScript
@@ -9,20 +8,16 @@ namespace IngameScript
 
         // Configuration
         public bool ADAPTIVE_SHUNT = true;
-        public bool DEBUG = false;
+        public readonly bool DEBUG = false;
         public int ticks = 0;
-        public const int TICKS_PER_SECOND = 6;
         public const int THREAT_REFRESH_INTERVAL = 60;
         public const int SHUNT_TIMEOUT = 300;
-        public const int POLL_MEMORY = 50;
-        public const int CYCLE_INTERVAL = 180; // 3 seconds at 60 ticks per second
-        public const int PERSISTENT_OUTPUT_DURATION = 300; // 5 seconds at 60 ticks per second
-
-        public readonly string[] cycleOrder = { "balanced", "kinetic", "energy", "explosive" };
+        public const int PERSISTENT_OUTPUT_DURATION = 300;
 
         public ConfigManager(Program program)
         {
             this.program = program;
+            SetShuntRecommendation("balanced");
         }
 
         public void IncrementTicks()
@@ -32,28 +27,27 @@ namespace IngameScript
 
         public void SetShuntRecommendation(string mode)
         {
+            const string key = "CurrentShunt=";
             var lines = program.Me.CustomData.Split('\n').ToList();
-            var found = false;
-            for (var i = 0; i < lines.Count; i++)
+            var index = lines.FindIndex(line => line.StartsWith(key));
+            var newEntry = key + mode;
+
+            if (index != -1)
             {
-                if (lines[i].StartsWith("CurrentShunt="))
-                {
-                    lines[i] = "CurrentShunt=" + mode;
-                    found = true;
-                    break;
-                }
+                lines[index] = newEntry;
             }
-            if (!found) lines.Add("CurrentShunt=" + mode);
-            program.Me.CustomData = string.Join("\n", lines);
+            else
+            {
+                lines.Add(newEntry);
+            }
+            program.Me.CustomData = string.Join("\n", lines.Where(l => !string.IsNullOrWhiteSpace(l)));
         }
 
         public string GetCurrentShunt()
         {
-            var lines = program.Me.CustomData.Split('\n');
-            for (var i = lines.Length - 1; i >= 0; i--)
-                if (lines[i].StartsWith("CurrentShunt="))
-                    return lines[i].Substring(13);
-            return "balanced";
+            const string key = "CurrentShunt=";
+            var line = program.Me.CustomData.Split('\n').LastOrDefault(l => l.StartsWith(key));
+            return line != null ? line.Substring(key.Length) : "balanced";
         }
     }
 }

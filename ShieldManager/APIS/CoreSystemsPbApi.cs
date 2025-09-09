@@ -1,3 +1,6 @@
+// To include all API functions in the build, add the following line at the top of this file:
+// #define FULL_WC_API
+
 using System;
 using System.Collections.Generic;
 using Sandbox.ModAPI.Ingame;
@@ -8,22 +11,24 @@ using VRageMath;
 
 namespace IngameScript
 {
-    // WC PB API USERS:  Copy the class below into your script
-
+    
     /// <summary>
     /// https://github.com/Ash-LikeSnow/WeaponCore/blob/master/Data/Scripts/CoreSystems/Api/CoreSystemsPbApi.cs
     /// </summary>
     public class WcPbApi
     {
+        private Func<long, MyTuple<bool, int, int>> _getProjectilesLockedOn;
+        private Func<long, int, MyDetectedEntityInfo> _getAiFocus;
+#if FULL_WC_API
         private Action<ICollection<MyDefinitionId>> _getCoreWeapons;
         private Action<ICollection<MyDefinitionId>> _getCoreStaticLaunchers;
         private Action<ICollection<MyDefinitionId>> _getCoreTurrets;
         private Func<IMyTerminalBlock, IDictionary<string, int>, bool> _getBlockWeaponMap;
-        private Func<long, MyTuple<bool, int, int>> _getProjectilesLockedOn;
+#endif
         private Action<IMyTerminalBlock, IDictionary<MyDetectedEntityInfo, float>> _getSortedThreats;
+#if FULL_WC_API
         private Action<IMyTerminalBlock, IDictionary<long, MyDetectedEntityInfo>> _getSortedThreatsByID;
         private Action<IMyTerminalBlock, ICollection<MyDetectedEntityInfo>> _getObstructions;
-        private Func<long, int, MyDetectedEntityInfo> _getAiFocus;
         private Func<IMyTerminalBlock, long, int, bool> _setAiFocus;
         private Func<IMyTerminalBlock, long, bool> _releaseAiFocus;
         private Func<IMyTerminalBlock, int, MyDetectedEntityInfo> _getWeaponTarget;
@@ -60,9 +65,7 @@ namespace IngameScript
         private Func<IMyTerminalBlock, MyTuple<bool, bool>> _isInRange;
         private Action<IMyTerminalBlock, int, Action<int, bool>> _monitorEvents;
         private Action<IMyTerminalBlock, int, Action<int, bool>> _unmonitorEvents;
-
-        // Descriptions made by Aristeas, with Sigmund Froid's https://steamcommunity.com/sharedfiles/filedetails/?id=2178802013 as a reference.
-        // PR accepted after prolific begging by Aryx
+#endif
         
         /// <summary>
         /// Activates the WcPbAPI using <see cref="IMyTerminalBlock"/> <paramref name="pbBlock"/>.
@@ -93,15 +96,18 @@ namespace IngameScript
             if (delegates == null)
                 return false;
 
+            AssignMethod(delegates, "GetProjectilesLockedOn", ref _getProjectilesLockedOn);
+            AssignMethod(delegates, "GetAiFocus", ref _getAiFocus);
+#if FULL_WC_API
             AssignMethod(delegates, "GetCoreWeapons", ref _getCoreWeapons);
             AssignMethod(delegates, "GetCoreStaticLaunchers", ref _getCoreStaticLaunchers);
             AssignMethod(delegates, "GetCoreTurrets", ref _getCoreTurrets);
             AssignMethod(delegates, "GetBlockWeaponMap", ref _getBlockWeaponMap);
-            AssignMethod(delegates, "GetProjectilesLockedOn", ref _getProjectilesLockedOn);
+#endif
             AssignMethod(delegates, "GetSortedThreats", ref _getSortedThreats);
+#if FULL_WC_API
             AssignMethod(delegates, "GetSortedThreatsByID", ref _getSortedThreatsByID);
             AssignMethod(delegates, "GetObstructions", ref _getObstructions);
-            AssignMethod(delegates, "GetAiFocus", ref _getAiFocus);
             AssignMethod(delegates, "SetAiFocus", ref _setAiFocus);
             AssignMethod(delegates, "ReleaseAiFocus", ref _releaseAiFocus);
             AssignMethod(delegates, "GetWeaponTarget", ref _getWeaponTarget);
@@ -138,6 +144,7 @@ namespace IngameScript
             AssignMethod(delegates, "IsInRange", ref _isInRange);
             AssignMethod(delegates, "RegisterEventMonitor", ref _monitorEvents);
             AssignMethod(delegates, "UnRegisterEventMonitor", ref _unmonitorEvents);
+#endif
             return true;
         }
 
@@ -170,6 +177,7 @@ namespace IngameScript
                     $"{GetType().Name} :: Delegate {name} is not type {typeof(T)}, instead it's: {del.GetType()}");
         }
 
+#if FULL_WC_API
         /// <summary>
         /// Populates <paramref name="collection"/> with <see cref="MyDefinitionId"/> of all loaded WeaponCore weapons.
         /// </summary>
@@ -208,6 +216,7 @@ namespace IngameScript
         public bool GetBlockWeaponMap(IMyTerminalBlock weaponBlock, IDictionary<string, int> collection) =>
             _getBlockWeaponMap?.Invoke(weaponBlock, collection) ?? false;
 
+#endif
         /// <summary>
         /// Returns a <see cref="MyTuple{bool, int, int}"/> containing information about projectiles targeting <paramref name="victim"/>.
         /// </summary>
@@ -216,7 +225,7 @@ namespace IngameScript
         /// <see cref="MyTuple{bool, int, int}"/> with contents:
         /// <list type="number">
         /// <item><see cref="bool"/> Is being locked?</item>
-        /// <item><see cref="int"/> Number of locked projectiles.</item>
+        /// <item><see cref="int"/> Number of projectiles locked.</item>
         /// <item><see cref="int"/> Time (in ticks) locked.</item>
         /// </list>
         /// </returns>
@@ -235,6 +244,7 @@ namespace IngameScript
         public void GetSortedThreats(IMyTerminalBlock pBlock, IDictionary<MyDetectedEntityInfo, float> collection) =>
             _getSortedThreats?.Invoke(pBlock, collection);
 
+#if FULL_WC_API
         /// <summary>
         /// Populates <paramref name="collection"/> with contents:
         /// <list type="bullet">
@@ -258,6 +268,7 @@ namespace IngameScript
         public void GetObstructions(IMyTerminalBlock pBlock, ICollection<MyDetectedEntityInfo> collection) =>
             _getObstructions?.Invoke(pBlock, collection);
 
+#endif
         /// <summary>
         /// Returns the GridAi Target with priority <paramref name="priority"/> of <see cref="IMyCubeGrid"/> with EntityID <paramref name="shooter"/>.
         /// </summary>
@@ -271,7 +282,7 @@ namespace IngameScript
         /// <param name="priority"></param>
         /// <returns>Nullable <see cref="MyDetectedEntityInfo"/>. Null if <paramref name="shooter"/> does not exist or lacks GridAi.</returns>
         public MyDetectedEntityInfo? GetAiFocus(long shooter, int priority = 0) => _getAiFocus?.Invoke(shooter, priority);
-
+#if FULL_WC_API
         /// <summary>
         /// Sets the GridAi Target of <paramref name="pBlock"/>'s <see cref="IMyCubeGrid"/> to EntityID <paramref name="target"/>.
         /// </summary>
@@ -523,7 +534,7 @@ namespace IngameScript
         /// </remarks>
         /// <param name="weapon"></param>
         /// <param name="weaponId"></param>
-        public void SetActiveAmmo(IMyTerminalBlock weapon, int weaponId, string ammoType) =>
+        /// <public void SetActiveAmmo(IMyTerminalBlock weapon, int weaponId, string ammoType) =>
             _setActiveAmmo?.Invoke(weapon, weaponId, ammoType);
 
         /// <summary>
@@ -720,6 +731,7 @@ namespace IngameScript
         /// <param name="action"></param>
         public void UnMonitorEvents(IMyTerminalBlock entity, int partId, Action<int, bool> action) =>
             _unmonitorEvents?.Invoke(entity, partId, action);
+#endif
 
     }
 }
