@@ -182,27 +182,76 @@ namespace IngameScript
             ApplyShunt(mode);
         }
 
-        public void ApplyShunt(string mode)
+        public void ApplyShunt(string shuntMode)
         {
-            if (string.IsNullOrEmpty(mode)) return;
+            if (DSControl == null || string.IsNullOrEmpty(shuntMode)) return;
 
-            if (forceShunt || mode != lastAppliedShunt)
+            // DEBUG: Always show what we're trying to do
+            program.Echo($"=== APPLYING SHUNT: {shuntMode.ToUpper()} ===");
+
+            // DEBUG: Check Side Redirect status first
+            try
             {
-                if (dsControl != null && ApplyShuntViaActions(mode))
-                {
-                    lastAppliedShunt = mode;
-                    forceShunt = false;
-                    if (config.DEBUG) program.Echo("Shunt applied via actions: " + mode.ToUpper());
-                }
-                else
-                {
-                    lastAppliedShunt = mode;
-                    forceShunt = false;
-                    if (config.DEBUG) program.Echo("Shunt failed or applied via CustomData: " + mode.ToUpper());
-                }
+                var redirectProp = DSControl.GetProperty("DS-C_SideRedirect") as ITerminalProperty<bool>;
+                bool sideRedirectEnabled = redirectProp?.GetValue(DSControl) ?? false;
+                program.Echo($"Side Redirect enabled: {sideRedirectEnabled}");
                 
-                config.SetShuntRecommendation(mode);
+                // Force enable if not enabled
+                if (!sideRedirectEnabled)
+                {
+                    program.Echo("Enabling Side Redirect...");
+                    EnableShuntShields();
+                }
             }
+            catch (Exception ex)
+            {
+                program.Echo($"Error checking Side Redirect: {ex.Message}");
+            }
+
+            if (!ShuntModeMappings.ContainsKey(shuntMode))
+            {
+                program.Echo($"ERROR: Unknown shunt mode '{shuntMode}'");
+                return;
+            }
+
+            var targetFaces = ShuntModeMappings[shuntMode];
+            program.Echo($"Target faces: {string.Join(", ", targetFaces)}");
+
+            foreach (string face in Faces)
+            {
+                bool shouldBeOn = targetFaces.Contains(face);
+                string actionName = GetShuntActionName(face, shouldBeOn);
+                
+                program.Echo($"Face {face}: {(shouldBeOn ? "ON" : "OFF")} -> Action: {actionName}");
+
+                var action = DSControl.GetActionWithName(actionName);
+                if (action == null)
+                {
+                    program.Echo($"ERROR: Action '{actionName}' not found!");
+                    continue;
+                }
+
+                try
+                {
+                    action.Apply(DSControl);
+                    program.Echo($"SUCCESS: Applied {actionName}");
+                }
+                catch (Exception ex)
+                {
+                    program.Echo($"ERROR applying {actionName}: {ex.Message}");
+                }
+            }
+
+            lastAppliedShunt = shuntMode;
+            program.Echo($"Shunt application complete: {shuntMode.ToUpper()}");
+        }
+
+        private string GetShuntActionName(string face, bool shouldBeOn)
+        {
+            // FIX: Defense Shields logic is reversed!
+            // "ShuntOn" = removes power from that face (face OFF)
+            // "ShuntOff" = adds power to that face (face ON)
+            return shouldBeOn ? $"DS-C_{face}Shield_ShuntOff" : $"DS-C_{face}Shield_ShuntOn";
         }
 
         private bool ApplyShuntViaActions(string mode)
@@ -214,9 +263,21 @@ namespace IngameScript
                 EnableShuntShields();
 
                 var anyApplied = false;
+                
+                // Fix: Get the target faces for this mode first
+                if (!ShuntModeMappings.ContainsKey(mode))
+                {
+                    if (config.DEBUG) program.Echo($"Unknown shunt mode: {mode}");
+                    return false;
+                }
+                
+                var targetFaces = ShuntModeMappings[mode];
+                
                 foreach (var face in Faces)
                 {
-                    var actionName = GetShuntActionName(face, mode);
+                    bool shouldBeOn = targetFaces.Contains(face);
+                    var actionName = GetShuntActionName(face, shouldBeOn); // Now uses bool correctly
+                    
                     if (!string.IsNullOrEmpty(actionName))
                     {
                         var action = dsControl.GetActionWithName(actionName);
@@ -238,14 +299,6 @@ namespace IngameScript
                 if (config.DEBUG) program.Echo("Action application failed: " + ex.Message);
                 return false;
             }
-        }
-
-        private string GetShuntActionName(string face, string mode)
-        {
-            var normalizedMode = mode.ToLower();
-            var shouldBeOn = ShuntModeMappings.ContainsKey(normalizedMode) && ShuntModeMappings[normalizedMode].Contains(face);
-
-            return shouldBeOn ? $"DS-C_{face}Shield_ShuntOn" : $"DS-C_{face}Shield_ShuntOff";
         }
 
         private void EnableShuntShields()

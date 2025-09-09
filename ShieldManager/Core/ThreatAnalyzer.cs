@@ -47,6 +47,52 @@ namespace IngameScript
             }
         }
 
+        private string GetThreatDirection(MyDetectedEntityInfo threat)
+        {
+            Vector3D threatPos = threat.Position;
+            Vector3D myPos = program.Me.GetPosition();
+            Vector3D worldDirection = threatPos - myPos;
+            
+            // Use the Programming Block's orientation vectors directly
+            MatrixD worldMatrix = program.Me.WorldMatrix;
+            Vector3D forward = worldMatrix.Forward;
+            Vector3D left = worldMatrix.Left;
+            Vector3D up = worldMatrix.Up;
+            
+            // Calculate dot products to determine which direction is dominant
+            double dotForward = Vector3D.Dot(worldDirection, forward);
+            double dotLeft = Vector3D.Dot(worldDirection, left);
+            double dotUp = Vector3D.Dot(worldDirection, up);
+            
+            double absDotForward = Math.Abs(dotForward);
+            double absDotLeft = Math.Abs(dotLeft);
+            double absDotUp = Math.Abs(dotUp);
+
+            // Add debug output
+            program.Echo($"=== DIRECTION CALCULATION ===");
+            program.Echo($"Dot Forward: {dotForward:F2}, Left: {dotLeft:F2}, Up: {dotUp:F2}");
+            program.Echo($"Abs Forward: {absDotForward:F2}, Left: {absDotLeft:F2}, Up: {absDotUp:F2}");
+
+            string result;
+            if (absDotLeft >= absDotForward && absDotLeft >= absDotUp)
+            {
+                result = dotLeft > 0 ? "left" : "right";
+                program.Echo($"Left/Right dominant ({dotLeft:F2}) -> {result.ToUpper()}");
+            }
+            else if (absDotUp >= absDotForward && absDotUp >= absDotLeft)
+            {
+                result = dotUp > 0 ? "top" : "bottom";
+                program.Echo($"Up/Down dominant ({dotUp:F2}) -> {result.ToUpper()}");
+            }
+            else
+            {
+                result = dotForward > 0 ? "front" : "back";
+                program.Echo($"Forward/Back dominant ({dotForward:F2}) -> {result.ToUpper()}");
+            }
+
+            return result;
+        }
+
         public void AnalyzeDirectionalThreats()
         {
             if (!wcApiActive) return;
@@ -54,7 +100,7 @@ namespace IngameScript
             // --- Get General Target and Lock-on Info ---
             CurrentTarget = wcApi.GetAiFocus(program.Me.CubeGrid.EntityId);
             var lockData = wcApi.GetProjectilesLockedOn(program.Me.CubeGrid.EntityId);
-            IncomingLocks = lockData.Item2; // Item2 is the number of projectiles locked on
+            IncomingLocks = lockData.Item2;
 
             // --- Adaptive Shunting based on CLOSEST threat ---
             if (!config.ADAPTIVE_SHUNT) return;
@@ -65,8 +111,12 @@ namespace IngameScript
             wcThreatBuffer.Clear();
             wcApi.GetSortedThreats(program.Me, wcThreatBuffer);
 
+            // Add debug for threat detection
+            program.Echo($"Threats detected: {wcThreatBuffer.Count}");
+
             if (wcThreatBuffer.Count == 0)
             {
+                program.Echo("No threats - applying balanced shunt");
                 shieldController.ApplyShunt("balanced");
                 return;
             }
@@ -91,36 +141,14 @@ namespace IngameScript
             if (closestThreat.EntityId != 0)
             {
                 string direction = GetThreatDirection(closestThreat);
+                program.Echo($"Applying shunt: {direction.ToUpper()}");
                 shieldController.ApplyShunt(direction);
             }
             else
             {
+                program.Echo("No valid threats - applying balanced shunt");
                 shieldController.ApplyShunt("balanced");
             }
-        }
-
-        private string GetThreatDirection(MyDetectedEntityInfo threat)
-        {
-            // Use the Defense Shields controller's coordinate system instead of the PB's
-            Vector3D threatPos = threat.Position;
-            Vector3D controllerPos = shieldController.DSControl.GetPosition();
-            
-            // Transform the threat position into the controller's local coordinate system
-            Vector3D worldOffset = threatPos - controllerPos;
-            Vector3D localThreatVector = Vector3D.Transform(worldOffset, 
-                MatrixD.Transpose(shieldController.DSControl.WorldMatrix));
-
-            double absX = Math.Abs(localThreatVector.X);
-            double absY = Math.Abs(localThreatVector.Y);
-            double absZ = Math.Abs(localThreatVector.Z);
-
-            // Determine the dominant direction in the controller's coordinate system
-            if (absX >= absY && absX >= absZ)
-                return localThreatVector.X > 0 ? "right" : "left";
-            else if (absY >= absX && absY >= absZ)
-                return localThreatVector.Y > 0 ? "top" : "bottom";
-            else
-                return localThreatVector.Z > 0 ? "back" : "front";
         }
     }
 }
