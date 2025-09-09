@@ -1,0 +1,68 @@
+name: Build and Release to Steam
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore ShieldManager.sln
+
+      - name: Build solution
+        run: dotnet build ShieldManager.sln --configuration Release --no-restore
+
+      - name: Publish output
+        run: dotnet publish ShieldManager.sln --configuration Release --output ./publish
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShieldManager-Build
+          path: ./publish
+
+  steam-upload:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ShieldManager-Build
+          path: ./publish
+
+      - name: Setup SteamCMD
+        run: |
+          mkdir steamcmd
+          curl -sSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip -o steamcmd/steamcmd.zip
+          tar -xf steamcmd/steamcmd.zip -C steamcmd
+
+      - name: Prepare Steam build scripts
+        run: |
+          echo "${{ secrets.STEAM_APP_BUILD_VDF }}" > app_build.vdf
+          echo "${{ secrets.STEAM_DEPOT_BUILD_VDF }}" > depot_build.vdf
+
+      - name: Upload build to Steam
+        env:
+          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+          STEAM_PASSWORD: ${{ secrets.STEAM_PASSWORD }}
+          STEAM_GUARD: ${{ secrets.STEAM_GUARD }}
+        run: |
+          ./steamcmd/steamcmd.exe +login %STEAM_USERNAME% %STEAM_PASSWORD% %STEAM_GUARD% +run_app_build app_build.vdf +quit
+
+      - name: Attach build as GitHub Release asset (optional)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./publish/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
