@@ -49,24 +49,24 @@ namespace IngameScript
 
         private string GetThreatDirection(MyDetectedEntityInfo threat)
         {
-            Vector3D threatPos = threat.Position;
-            Vector3D myPos = program.Me.GetPosition();
-            Vector3D worldDirection = threatPos - myPos;
+            var threatPos = threat.Position;
+            var myPos = program.Me.GetPosition();
+            var worldDirection = threatPos - myPos;
             
             // Use the Programming Block's orientation vectors directly
-            MatrixD worldMatrix = program.Me.WorldMatrix;
-            Vector3D forward = worldMatrix.Forward;
-            Vector3D left = worldMatrix.Left;
-            Vector3D up = worldMatrix.Up;
+            var worldMatrix = program.Me.WorldMatrix;
+            var forward = worldMatrix.Forward;
+            var left = worldMatrix.Left;
+            var up = worldMatrix.Up;
             
             // Calculate dot products to determine which direction is dominant
-            double dotForward = Vector3D.Dot(worldDirection, forward);
-            double dotLeft = Vector3D.Dot(worldDirection, left);
-            double dotUp = Vector3D.Dot(worldDirection, up);
+            var dotForward = Vector3D.Dot(worldDirection, forward);
+            var dotLeft = Vector3D.Dot(worldDirection, left);
+            var dotUp = Vector3D.Dot(worldDirection, up);
             
-            double absDotForward = Math.Abs(dotForward);
-            double absDotLeft = Math.Abs(dotLeft);
-            double absDotUp = Math.Abs(dotUp);
+            var absDotForward = Math.Abs(dotForward);
+            var absDotLeft = Math.Abs(dotLeft);
+            var absDotUp = Math.Abs(dotUp);
 
             // Add debug output
             program.Echo($"=== DIRECTION CALCULATION ===");
@@ -122,14 +122,14 @@ namespace IngameScript
             }
 
             // Find the closest threat
-            MyDetectedEntityInfo closestThreat = new MyDetectedEntityInfo();
-            double closestDistSq = double.MaxValue;
-            Vector3D myPos = program.Me.GetPosition();
+            var closestThreat = new MyDetectedEntityInfo();
+            var closestDistSq = double.MaxValue;
+            var myPos = program.Me.GetPosition();
 
             foreach (var entry in wcThreatBuffer)
             {
                 var threatInfo = entry.Key;
-                double distSq = Vector3D.DistanceSquared(myPos, threatInfo.Position);
+                var distSq = Vector3D.DistanceSquared(myPos, threatInfo.Position);
                 if (distSq < closestDistSq)
                 {
                     closestDistSq = distSq;
@@ -140,7 +140,7 @@ namespace IngameScript
             // Apply shunt based on the direction of the closest threat
             if (closestThreat.EntityId != 0)
             {
-                string direction = GetThreatDirection(closestThreat);
+                var direction = GetThreatDirection(closestThreat);
                 program.Echo($"Applying shunt: {direction.ToUpper()}");
                 shieldController.ApplyShunt(direction);
             }
