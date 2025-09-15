@@ -24,9 +24,6 @@ namespace IngameScript
 
         private static readonly Dictionary<string, HashSet<string>> ShuntModeMappings = new Dictionary<string, HashSet<string>>
         {
-            ["kinetic"] = new HashSet<string> { "Front", "Back" },
-            ["energy"] = new HashSet<string> { "Top", "Bottom" },
-            ["explosive"] = new HashSet<string> { "Front", "Left", "Right" },
             ["front"] = new HashSet<string> { "Front" },
             ["back"] = new HashSet<string> { "Back" },
             ["left"] = new HashSet<string> { "Left" },
@@ -240,6 +237,7 @@ namespace IngameScript
             }
 
             lastAppliedShunt = shuntMode;
+            config.SetShuntRecommendation(shuntMode);
             program.Echo($"Shunt application complete: {shuntMode.ToUpper()}");
         }
 

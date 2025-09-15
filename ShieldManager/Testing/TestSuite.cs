@@ -1,3 +1,4 @@
+#if false
 using System.Text;
 
 namespace IngameScript
@@ -87,3 +88,4 @@ namespace IngameScript
         }
     }
 }
+#endif
